@@ -13,19 +13,19 @@ main{max-width:700px;margin:20px auto;padding:15px}
 .card{background:white;padding:20px;border-radius:14px;margin-bottom:16px}
 input,button,select,textarea{width:100%;padding:12px;margin:7px 0;box-sizing:border-box;border:1px solid #ccd5e1;border-radius:8px}
 button{background:#174ea6;color:white;border:0;font-weight:bold;cursor:pointer}
-.hidden{display:none}.note{font-size:13px;color:#64748b}
+.hidden{display:none}
+.note{font-size:13px;color:#64748b}
 </style>
 </head>
 <body>
 <header><h2>TEAM APP</h2><div>Lead Management CRM</div></header>
 <main>
 <section class="card" id="login">
-<h3>Login / Create Account</h3>
+<h3>Login</h3>
 <input id="email" type="email" placeholder="Email address">
 <input id="password" type="password" placeholder="Password">
-<button onclick="signIn()">Login</button>
-<button onclick="signUp()">Create account</button>
-<p id="msg" class="note">Create accounts only for authorized users.</p>
+<button id="loginBtn" type="button">Login</button>
+<p id="msg" class="note">Please login with your authorized account.</p>
 </section>
 
 <section class="card hidden" id="app">
@@ -41,93 +41,81 @@ button{background:#174ea6;color:white;border:0;font-weight:bold;cursor:pointer}
 <option>Disbursed</option><option>Rejected</option>
 </select>
 <textarea id="remarks" placeholder="Remarks"></textarea>
-<button>Save Lead</button>
+<button type="submit">Save Lead</button>
 </form>
-<h3>My Leads</h3>
+<h3>Leads</h3>
 <div id="leads">Loading leads...</div>
-<button onclick="logout()">Logout</button>
+<button id="logoutBtn" type="button">Logout</button>
 </section>
 </main>
+
 <script>
-const SUPABASE_URL="https://jaccqwfvtfpwuirarntt.supabase.co";
+const SUPABASE_URL="https://jaccqwfvftpwuirarmtt.supabase.co";
 const SUPABASE_KEY="sb_publishable_ffTmApZkygA81Erw0RuNXA_4HBqgYQ2";
 const db=window.supabase.createClient(SUPABASE_URL,SUPABASE_KEY);
 
 let currentUser=null;
 let currentRole="member";
 
+const el=id=>document.getElementById(id);
+
+el("loginBtn").addEventListener("click",signIn);
+el("logoutBtn").addEventListener("click",logout);
+
 async function signIn(){
- const emailValue=document.getElementById("email").value.trim();
- const passwordValue=document.getElementById("password").value;
+ el("msg").textContent="Logging in...";
  const {data,error}=await db.auth.signInWithPassword({
-  email:emailValue,password:passwordValue
+  email:el("email").value.trim(),
+  password:el("password").value
  });
  if(error){
-  document.getElementById("msg").textContent=error.message;
+  el("msg").textContent="Login failed: "+error.message;
   return;
  }
  currentUser=data.user;
  await showApp();
 }
 
-async function signUp(){
- const emailValue=document.getElementById("email").value.trim();
- const passwordValue=document.getElementById("password").value;
- const {error}=await db.auth.signUp({
-  email:emailValue,password:passwordValue
- });
- document.getElementById("msg").textContent=error
-  ? error.message
-  : "Account request submitted. Admin authorization may be required.";
-}
-
 async function showApp(){
- document.getElementById("login").classList.add("hidden");
- document.getElementById("app").classList.remove("hidden");
-
  const {data:roleData,error:roleError}=await db
   .from("team_roles")
-  .select("role,display_name")
+  .select("role")
   .eq("user_id",currentUser.id)
   .maybeSingle();
 
- if(roleError || !roleData){
-  document.getElementById("msg").textContent=
-   "Your account has not been authorized. Please contact Admin.";
-  document.getElementById("app").classList.add("hidden");
-  document.getElementById("login").classList.remove("hidden");
+ if(roleError){
+  el("msg").textContent="Role lookup failed: "+roleError.message;
+  return;
+ }
+ if(!roleData){
+  el("msg").textContent="Account role not assigned. Contact Admin.";
   return;
  }
 
  currentRole=roleData.role;
+ el("login").classList.add("hidden");
+ el("app").classList.remove("hidden");
  await loadLeads();
 }
 
 async function loadLeads(){
- let query=db.from("leads").select("*")
-  .order("created_at",{ascending:false});
-
- if(currentRole!=="admin"){
-  query=query.eq("created_by",currentUser.id);
- }
-
- const {data,error}=await query;
- const leadsElement=document.getElementById("leads");
+ const {data,error}=await db.from("leads")
+  .select("*").order("created_at",{ascending:false});
 
  if(error){
-  leadsElement.textContent="Could not load leads: "+error.message;
+  el("leads").textContent="Could not load leads: "+error.message;
   return;
  }
 
- if(!data || data.length===0){
-  leadsElement.textContent="No leads yet";
+ if(!data||data.length===0){
+  el("leads").textContent="No leads yet";
   return;
  }
 
- leadsElement.innerHTML=data.map(l=>`
+ el("leads").innerHTML=data.map(l=>`
   <div class="card">
    <b>${escapeHtml(l.customer_name)}</b><br>
-   Phone: ${escapeHtml(l.phone||"")}<br>
+   Phone: ${escapeHtml(l.phone)}<br>
    Location: ${escapeHtml(l.location||"")}<br>
    ${currentRole==="admin"
     ? "Uploaded By: <b>"+escapeHtml(l.uploaded_by_name||"Unknown")+"</b><br>"
@@ -139,50 +127,49 @@ async function loadLeads(){
  `).join("");
 }
 
-function escapeHtml(value){
- return String(value??"").replace(/[&<>"']/g,c=>({
+function escapeHtml(s){
+ return String(s??"").replace(/[&<>"']/g,c=>({
   "&":"&amp;","<":"&lt;",">":"&gt;",
   '"':"&quot;","'":"&#39;"
  }[c]));
 }
 
-document.getElementById("leadForm").addEventListener("submit",async e=>{
+el("leadForm").addEventListener("submit",async e=>{
  e.preventDefault();
-
  const {data,error:userError}=await db.auth.getUser();
+
  if(userError||!data.user){
-  document.getElementById("msg").textContent="Please login again.";
+  el("msg").textContent="Please login again.";
   return;
  }
 
- const user=data.user;
  const {error}=await db.from("leads").insert({
-  customer_name:document.getElementById("name").value.trim(),
-  phone:document.getElementById("phone").value.trim(),
-  location:document.getElementById("location").value.trim(),
-  follow_up_date:document.getElementById("follow").value||null,
-  status:document.getElementById("status").value,
-  remarks:document.getElementById("remarks").value.trim(),
-  created_by:user.id
+  customer_name:el("name").value.trim(),
+  phone:el("phone").value.trim(),
+  location:el("location").value.trim(),
+  follow_up_date:el("follow").value||null,
+  status:el("status").value,
+  remarks:el("remarks").value.trim(),
+  created_by:data.user.id
  });
 
  if(error){
-  document.getElementById("msg").textContent="Save failed: "+error.message;
+  el("msg").textContent="Save failed: "+error.message;
   return;
  }
 
- document.getElementById("msg").textContent="Lead saved successfully!";
+ el("msg").textContent="Lead saved successfully!";
  e.target.reset();
  await loadLeads();
 });
 
 async function logout(){
  await db.auth.signOut();
- window.location.reload();
+ location.reload();
 }
 
 db.auth.getSession().then(async({data,error})=>{
- if(!error && data.session){
+ if(!error&&data.session){
   currentUser=data.session.user;
   await showApp();
  }
