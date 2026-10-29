@@ -78,16 +78,35 @@ async function loadLeads(){
   (data.length?data.map(l=>`<div class="card"><b>${escapeHtml(l.customer_name)}</b><br>${escapeHtml(l.phone)}<br>${escapeHtml(l.location||"")}<br>Status: ${escapeHtml(l.status)}<br>Follow-up: ${escapeHtml(l.follow_up_date||"")}<br>${escapeHtml(l.remarks||"")}</div>`).join(""):"No leads yet");
 }
 function escapeHtml(s){return String(s).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));}
-leadForm.addEventListener("submit",async e=>{
- e.preventDefault();
- const {error}=await db.from("leads").insert({
-  customer_name:name.value.trim(),phone:phone.value.trim(),
-  location:location.value.trim(),follow_up_date:follow.value||null,
-  status:status.value,remarks:remarks.value.trim(),created_by:currentUser.id
- });
- msg.textContent=error?error.message:"";
- if(!error){leadForm.reset();await loadLeads();}
+
+leadForm.addEventListener("submit", async (e) => {
+  e.preventDefault();
+
+  if (!currentUser) {
+    msg.textContent = "Please login again.";
+    return;
+  }
+
+  const { data, error } = await db.from("leads").insert({
+    customer_name: name.value.trim(),
+    phone: phone.value.trim(),
+    location: location.value.trim(),
+    follow_up_date: follow.value || null,
+    status: status.value,
+    remarks: remarks.value.trim(),
+    created_by: currentUser.id
+  });
+
+  if (error) {
+    msg.textContent = "Save failed: " + error.message;
+    return;
+  }
+
+  msg.textContent = "Lead saved successfully!";
+  leadForm.reset();
+  await loadLeads();
 });
+
 async function logout(){await db.auth.signOut();location.reload();}
 db.auth.getSession().then(({data})=>{if(data.session){currentUser=data.session.user;showApp();}});
 </script>
