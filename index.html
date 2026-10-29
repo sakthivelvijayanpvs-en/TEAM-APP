@@ -49,69 +49,144 @@ button{background:#174ea6;color:white;border:0;font-weight:bold;cursor:pointer}
 </section>
 </main>
 <script>
-const SUPABASE_URL="https://jaccqwfvtfpwuirarntt.supabase.co";
+const SUPABASE_URL="https://jaccqwfvtfpwuirarmtt.supabase.co";
 const SUPABASE_KEY="sb_publishable_ffTmApZkygA81Erw0RuNXA_4HBqgYQ2";
 const db=window.supabase.createClient(SUPABASE_URL,SUPABASE_KEY);
-let currentUser;
+
+let currentUser=null;
+let currentRole="member";
 
 async function signIn(){
+ const emailValue=document.getElementById("email").value.trim();
+ const passwordValue=document.getElementById("password").value;
  const {data,error}=await db.auth.signInWithPassword({
-  email:email.value.trim(),password:password.value
+  email:emailValue,password:passwordValue
  });
- if(error){msg.textContent=error.message;return}
- currentUser=data.user;await showApp();
+ if(error){
+  document.getElementById("msg").textContent=error.message;
+  return;
+ }
+ currentUser=data.user;
+ await showApp();
 }
+
 async function signUp(){
- const {data,error}=await db.auth.signUp({
-  email:email.value.trim(),password:password.value
+ const emailValue=document.getElementById("email").value.trim();
+ const passwordValue=document.getElementById("password").value;
+ const {error}=await db.auth.signUp({
+  email:emailValue,password:passwordValue
  });
- msg.textContent=error?error.message:
-  "Account request submitted. Verify email if required; Admin must authorize access.";
+ document.getElementById("msg").textContent=error
+  ? error.message
+  : "Account request submitted. Admin authorization may be required.";
 }
+
 async function showApp(){
- login.classList.add("hidden");app.classList.remove("hidden");
+ document.getElementById("login").classList.add("hidden");
+ document.getElementById("app").classList.remove("hidden");
+
+ const {data:roleData,error:roleError}=await db
+  .from("team_roles")
+  .select("role,display_name")
+  .eq("user_id",currentUser.id)
+  .maybeSingle();
+
+ if(roleError || !roleData){
+  document.getElementById("msg").textContent=
+   "Your account has not been authorized. Please contact Admin.";
+  document.getElementById("app").classList.add("hidden");
+  document.getElementById("login").classList.remove("hidden");
+  return;
+ }
+
+ currentRole=roleData.role;
  await loadLeads();
 }
+
 async function loadLeads(){
- const {data,error}=await db.from("leads").select("*").order("created_at",{ascending:false});
- leads.innerHTML=error?"Could not load leads: "+error.message:
-  (data.length?data.map(l=>`<div class="card"><b>${escapeHtml(l.customer_name)}</b><br>${escapeHtml(l.phone)}<br>${escapeHtml(l.location||"")}<br>Status: ${escapeHtml(l.status)}<br>Follow-up: ${escapeHtml(l.follow_up_date||"")}<br>${escapeHtml(l.remarks||"")}</div>`).join(""):"No leads yet");
+ let query=db.from("leads").select("*")
+  .order("created_at",{ascending:false});
+
+ if(currentRole!=="admin"){
+  query=query.eq("created_by",currentUser.id);
+ }
+
+ const {data,error}=await query;
+ const leadsElement=document.getElementById("leads");
+
+ if(error){
+  leadsElement.textContent="Could not load leads: "+error.message;
+  return;
+ }
+
+ if(!data || data.length===0){
+  leadsElement.textContent="No leads yet";
+  return;
+ }
+
+ leadsElement.innerHTML=data.map(l=>`
+  <div class="card">
+   <b>${escapeHtml(l.customer_name)}</b><br>
+   Phone: ${escapeHtml(l.phone||"")}<br>
+   Location: ${escapeHtml(l.location||"")}<br>
+   ${currentRole==="admin"
+    ? "Uploaded By: <b>"+escapeHtml(l.uploaded_by_name||"Unknown")+"</b><br>"
+    : ""}
+   Status: ${escapeHtml(l.status||"")}<br>
+   Follow-up: ${escapeHtml(l.follow_up_date||"")}<br>
+   Remarks: ${escapeHtml(l.remarks||"")}
+  </div>
+ `).join("");
 }
-function escapeHtml(s){return String(s).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));}
-const leadForm = document.getElementById("leadForm");
 
-leadForm.addEventListener("submit", async (e) => {
-  e.preventDefault();
+function escapeHtml(value){
+ return String(value??"").replace(/[&<>"']/g,c=>({
+  "&":"&amp;","<":"&lt;",">":"&gt;",
+  '"':"&quot;","'":"&#39;"
+ }[c]));
+}
 
-  const msg = document.getElementById("msg");
-  const currentUser = await db.auth.getUser();
+document.getElementById("leadForm").addEventListener("submit",async e=>{
+ e.preventDefault();
 
-  if (currentUser.error || !currentUser.data.user) {
-    msg.textContent = "Please login again.";
-    return;
-  }
+ const {data,error:userError}=await db.auth.getUser();
+ if(userError||!data.user){
+  document.getElementById("msg").textContent="Please login again.";
+  return;
+ }
 
-  const { error } = await db.from("leads").insert({
-    customer_name: document.getElementById("name").value.trim(),
-    phone: document.getElementById("phone").value.trim(),
-    location: document.getElementById("location").value.trim(),
-    follow_up_date: document.getElementById("follow").value || null,
-    status: document.getElementById("status").value,
-    remarks: document.getElementById("remarks").value.trim(),
-    created_by: currentUser.data.user.id
-  });
+ const user=data.user;
+ const {error}=await db.from("leads").insert({
+  customer_name:document.getElementById("name").value.trim(),
+  phone:document.getElementById("phone").value.trim(),
+  location:document.getElementById("location").value.trim(),
+  follow_up_date:document.getElementById("follow").value||null,
+  status:document.getElementById("status").value,
+  remarks:document.getElementById("remarks").value.trim(),
+  created_by:user.id
+ });
 
-  if (error) {
-    msg.textContent = "Save failed: " + error.message;
-    return;
-  }
+ if(error){
+  document.getElementById("msg").textContent="Save failed: "+error.message;
+  return;
+ }
 
-  msg.textContent = "Lead saved successfully!";
-  leadForm.reset();
-  await loadLeads();
+ document.getElementById("msg").textContent="Lead saved successfully!";
+ e.target.reset();
+ await loadLeads();
 });
-async function logout(){await db.auth.signOut();location.reload();}
-db.auth.getSession().then(({data})=>{if(data.session){currentUser=data.session.user;showApp();}});
+
+async function logout(){
+ await db.auth.signOut();
+ window.location.reload();
+}
+
+db.auth.getSession().then(async({data,error})=>{
+ if(!error && data.session){
+  currentUser=data.session.user;
+  await showApp();
+ }
+});
 </script>
 </body>
 </html>
