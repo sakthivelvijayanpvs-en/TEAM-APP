@@ -5,85 +5,91 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>TEAM APP CRM</title>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <style>
-*{box-sizing:border-box}
-body{margin:0;font-family:Arial;background:#f1f5f9;color:#172033}
-header{background:#174ea6;color:white;padding:20px}
-header h1{margin:0;font-size:25px}
-main{max-width:850px;margin:24px auto;padding:16px}
-.card{background:white;padding:20px;border-radius:14px;margin-bottom:18px;box-shadow:0 3px 12px #0001}
-h2{margin-top:0;color:#174ea6}
-input,select,textarea,button{width:100%;padding:12px;margin:7px 0;border:1px solid #ccd5e1;border-radius:8px;font-size:15px}
+body{font-family:Arial;background:#f1f5f9;margin:0;color:#172033}
+header{background:#174ea6;color:white;padding:18px}
+main{max-width:700px;margin:20px auto;padding:15px}
+.card{background:white;padding:20px;border-radius:14px;margin-bottom:16px}
+input,button,select,textarea{width:100%;padding:12px;margin:7px 0;box-sizing:border-box;border:1px solid #ccd5e1;border-radius:8px}
 button{background:#174ea6;color:white;border:0;font-weight:bold;cursor:pointer}
-.note{color:#64748b;font-size:13px;line-height:1.5}
-.grid{display:grid;grid-template-columns:1fr 1fr;gap:12px}
-@media(max-width:520px){.grid{grid-template-columns:1fr}}
+.hidden{display:none}.note{font-size:13px;color:#64748b}
 </style>
 </head>
 <body>
-<header>
-  <h1>TEAM APP</h1>
-  <p>Lead Management CRM</p>
-</header>
+<header><h2>TEAM APP</h2><div>Lead Management CRM</div></header>
 <main>
-  <section class="card">
-    <h2>Welcome to TEAM APP</h2>
-    <p>Customer lead management and follow-up portal.</p>
-    <p class="note">Prototype version. Login, shared storage and access permissions are not connected yet.</p>
-  </section>
+<section class="card" id="login">
+<h3>Login / Create Account</h3>
+<input id="email" type="email" placeholder="Email address">
+<input id="password" type="password" placeholder="Password">
+<button onclick="signIn()">Login</button>
+<button onclick="signUp()">Create account</button>
+<p id="msg" class="note">Create accounts only for authorized users.</p>
+</section>
 
-  <section class="card">
-    <h2>Lead Entry Form</h2>
-    <form id="leadForm">
-      <label>Customer Name</label>
-      <input id="customerName" required placeholder="Enter customer name">
-
-      <label>Phone Number</label>
-      <input id="phone" type="tel" required placeholder="Enter phone number">
-
-      <label>Location</label>
-      <input id="location" required placeholder="Enter location">
-
-      <label>Follow-up Date</label>
-      <input id="followup" type="date">
-
-      <label>Lead Status</label>
-      <select id="status">
-        <option>New</option>
-        <option>Follow-up</option>
-        <option>Interested</option>
-        <option>Approved</option>
-        <option>Disbursed</option>
-        <option>Rejected</option>
-      </select>
-
-      <label>Remarks</label>
-      <textarea id="remarks" placeholder="Enter follow-up remarks"></textarea>
-
-      <button type="submit">Submit Lead (Demo)</button>
-    </form>
-    <p id="message" class="note" aria-live="polite"></p>
-  </section>
-
-  <section class="card">
-    <h2>CRM Features</h2>
-    <div class="grid">
-      <div>👤 Admin Dashboard</div>
-      <div>👥 Five Team Members</div>
-      <div>📋 Lead Management</div>
-      <div>📅 Follow-up Tracking</div>
-      <div>📊 Team Reports</div>
-      <div>📥 Admin-only Export</div>
-    </div>
-    <p class="note">These are planned features, not active permissions. Secure login and shared storage must be configured before use.</p>
-  </section>
+<section class="card hidden" id="app">
+<h3>Add New Lead</h3>
+<form id="leadForm">
+<input id="name" placeholder="Customer name" required>
+<input id="phone" placeholder="Phone number" required>
+<input id="location" placeholder="Location">
+<input id="follow" type="date">
+<select id="status">
+<option>New</option><option>Follow-up</option>
+<option>Interested</option><option>Approved</option>
+<option>Disbursed</option><option>Rejected</option>
+</select>
+<textarea id="remarks" placeholder="Remarks"></textarea>
+<button>Save Lead</button>
+</form>
+<h3>My Leads</h3>
+<div id="leads">Loading leads...</div>
+<button onclick="logout()">Logout</button>
+</section>
 </main>
 <script>
-document.getElementById("leadForm").addEventListener("submit",function(e){
-  e.preventDefault();
-  document.getElementById("message").textContent =
-    "Demo only: no customer data was saved. Shared storage is not connected.";
+const SUPABASE_URL="https://jaccqwfvtfpwuirarntt.supabase.co/rest/v1/";
+const SUPABASE_KEY="sb_publishable_ffTmApZkygA81Erw0RuNXA_4HBqgYQ2";
+const db=window.supabase.createClient(SUPABASE_URL,SUPABASE_KEY);
+let currentUser;
+
+async function signIn(){
+ const {data,error}=await db.auth.signInWithPassword({
+  email:email.value.trim(),password:password.value
+ });
+ if(error){msg.textContent=error.message;return}
+ currentUser=data.user;await showApp();
+}
+async function signUp(){
+ const {data,error}=await db.auth.signUp({
+  email:email.value.trim(),password:password.value
+ });
+ msg.textContent=error?error.message:
+  "Account request submitted. Verify email if required; Admin must authorize access.";
+}
+async function showApp(){
+ login.classList.add("hidden");app.classList.remove("hidden");
+ await loadLeads();
+}
+async function loadLeads(){
+ const {data,error}=await db.from("leads").select("*").order("created_at",{ascending:false});
+ leads.innerHTML=error?"Could not load leads: "+error.message:
+  (data.length?data.map(l=>`<div class="card"><b>${escapeHtml(l.customer_name)}</b><br>${escapeHtml(l.phone)}<br>${escapeHtml(l.location||"")}<br>Status: ${escapeHtml(l.status)}<br>Follow-up: ${escapeHtml(l.follow_up_date||"")}<br>${escapeHtml(l.remarks||"")}</div>`).join(""):"No leads yet");
+}
+function escapeHtml(s){return String(s).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));}
+leadForm.addEventListener("submit",async e=>{
+ e.preventDefault();
+ const {error}=await db.from("leads").insert({
+  customer_name:name.value.trim(),phone:phone.value.trim(),
+  location:location.value.trim(),follow_up_date:follow.value||null,
+  status:status.value,remarks:remarks.value.trim(),created_by:currentUser.id
+ });
+ msg.textContent=error?error.message:"";
+ if(!error){leadForm.reset();await loadLeads();}
 });
+async function logout(){await db.auth.signOut();location.reload();}
+db.auth.getSession().then(({data})=>{if(data.session){currentUser=data.session.user;showApp();}});
 </script>
 </body>
 </html>
