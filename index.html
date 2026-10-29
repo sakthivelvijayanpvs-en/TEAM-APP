@@ -2,64 +2,88 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>TEAM APP CRM</title>
-  <style>
-    body {
-      font-family: Arial, sans-serif;
-      background: #f1f5f9;
-      margin: 0;
-      padding: 30px 16px;
-    }
-    .card {
-      max-width: 420px;
-      margin: auto;
-      background: white;
-      padding: 24px;
-      border-radius: 16px;
-      box-shadow: 0 4px 18px #0001;
-    }
-    h1 { color: #174ea6; text-align: center; }
-    input, button {
-      box-sizing: border-box;
-      width: 100%;
-      padding: 12px;
-      margin: 8px 0;
-      border-radius: 8px;
-      border: 1px solid #cbd5e1;
-    }
-    button {
-      background: #174ea6;
-      color: white;
-      border: 0;
-      font-weight: bold;
-      cursor: pointer;
-    }
-    .note { color: #64748b; font-size: 13px; }
-  </style>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>TEAM APP CRM</title>
+<style>
+*{box-sizing:border-box}
+body{margin:0;font-family:Arial;background:#f1f5f9;color:#172033}
+header{background:#174ea6;color:white;padding:20px}
+header h1{margin:0;font-size:25px}
+main{max-width:850px;margin:24px auto;padding:16px}
+.card{background:white;padding:20px;border-radius:14px;margin-bottom:18px;box-shadow:0 3px 12px #0001}
+h2{margin-top:0;color:#174ea6}
+input,select,textarea,button{width:100%;padding:12px;margin:7px 0;border:1px solid #ccd5e1;border-radius:8px;font-size:15px}
+button{background:#174ea6;color:white;border:0;font-weight:bold;cursor:pointer}
+.note{color:#64748b;font-size:13px;line-height:1.5}
+.grid{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+@media(max-width:520px){.grid{grid-template-columns:1fr}}
+</style>
 </head>
 <body>
-  <div class="card">
-    <h1>TEAM APP</h1>
-    <p style="text-align:center">Lead Management CRM</p>
+<header>
+  <h1>TEAM APP</h1>
+  <p>Lead Management CRM</p>
+</header>
+<main>
+  <section class="card">
+    <h2>Welcome to TEAM APP</h2>
+    <p>Customer lead management and follow-up portal.</p>
+    <p class="note">Prototype version. Login, shared storage and access permissions are not connected yet.</p>
+  </section>
+
+  <section class="card">
+    <h2>Lead Entry Form</h2>
     <form id="leadForm">
-      <input id="name" placeholder="Customer Name" required>
-      <input id="phone" placeholder="Phone Number" type="tel" required>
-      <input id="location" placeholder="Customer Location" required>
-      <button type="submit">Save Lead</button>
+      <label>Customer Name</label>
+      <input id="customerName" required placeholder="Enter customer name">
+
+      <label>Phone Number</label>
+      <input id="phone" type="tel" required placeholder="Enter phone number">
+
+      <label>Location</label>
+      <input id="location" required placeholder="Enter location">
+
+      <label>Follow-up Date</label>
+      <input id="followup" type="date">
+
+      <label>Lead Status</label>
+      <select id="status">
+        <option>New</option>
+        <option>Follow-up</option>
+        <option>Interested</option>
+        <option>Approved</option>
+        <option>Disbursed</option>
+        <option>Rejected</option>
+      </select>
+
+      <label>Remarks</label>
+      <textarea id="remarks" placeholder="Enter follow-up remarks"></textarea>
+
+      <button type="submit">Submit Lead (Demo)</button>
     </form>
-    <p id="message" class="note">
-      Demo screen only. Secure shared storage and login are not connected yet.
-    </p>
-  </div>
-  <script>
-    document.getElementById('leadForm').addEventListener('submit', function(e) {
-      e.preventDefault();
-      document.getElementById('message').textContent =
-        'Demo only: lead is not saved permanently yet.';
-    });
-  </script>
+    <p id="message" class="note" aria-live="polite"></p>
+  </section>
+
+  <section class="card">
+    <h2>CRM Features</h2>
+    <div class="grid">
+      <div>👤 Admin Dashboard</div>
+      <div>👥 Five Team Members</div>
+      <div>📋 Lead Management</div>
+      <div>📅 Follow-up Tracking</div>
+      <div>📊 Team Reports</div>
+      <div>📥 Admin-only Export</div>
+    </div>
+    <p class="note">These are planned features, not active permissions. Secure login and shared storage must be configured before use.</p>
+  </section>
+</main>
+<script>
+document.getElementById("leadForm").addEventListener("submit",function(e){
+  e.preventDefault();
+  document.getElementById("message").textContent =
+    "Demo only: no customer data was saved. Shared storage is not connected.";
+});
+</script>
 </body>
 </html>
-
