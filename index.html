@@ -78,23 +78,27 @@ async function loadLeads(){
   (data.length?data.map(l=>`<div class="card"><b>${escapeHtml(l.customer_name)}</b><br>${escapeHtml(l.phone)}<br>${escapeHtml(l.location||"")}<br>Status: ${escapeHtml(l.status)}<br>Follow-up: ${escapeHtml(l.follow_up_date||"")}<br>${escapeHtml(l.remarks||"")}</div>`).join(""):"No leads yet");
 }
 function escapeHtml(s){return String(s).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));}
+const leadForm = document.getElementById("leadForm");
 
 leadForm.addEventListener("submit", async (e) => {
   e.preventDefault();
 
-  if (!currentUser) {
+  const msg = document.getElementById("msg");
+  const currentUser = await db.auth.getUser();
+
+  if (currentUser.error || !currentUser.data.user) {
     msg.textContent = "Please login again.";
     return;
   }
 
-  const { data, error } = await db.from("leads").insert({
-    customer_name: name.value.trim(),
-    phone: phone.value.trim(),
-    location: location.value.trim(),
-    follow_up_date: follow.value || null,
-    status: status.value,
-    remarks: remarks.value.trim(),
-    created_by: currentUser.id
+  const { error } = await db.from("leads").insert({
+    customer_name: document.getElementById("name").value.trim(),
+    phone: document.getElementById("phone").value.trim(),
+    location: document.getElementById("location").value.trim(),
+    follow_up_date: document.getElementById("follow").value || null,
+    status: document.getElementById("status").value,
+    remarks: document.getElementById("remarks").value.trim(),
+    created_by: currentUser.data.user.id
   });
 
   if (error) {
@@ -106,7 +110,6 @@ leadForm.addEventListener("submit", async (e) => {
   leadForm.reset();
   await loadLeads();
 });
-
 async function logout(){await db.auth.signOut();location.reload();}
 db.auth.getSession().then(({data})=>{if(data.session){currentUser=data.session.user;showApp();}});
 </script>
