@@ -1,1 +1,65 @@
 
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>TEAM APP CRM</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      background: #f1f5f9;
+      margin: 0;
+      padding: 30px 16px;
+    }
+    .card {
+      max-width: 420px;
+      margin: auto;
+      background: white;
+      padding: 24px;
+      border-radius: 16px;
+      box-shadow: 0 4px 18px #0001;
+    }
+    h1 { color: #174ea6; text-align: center; }
+    input, button {
+      box-sizing: border-box;
+      width: 100%;
+      padding: 12px;
+      margin: 8px 0;
+      border-radius: 8px;
+      border: 1px solid #cbd5e1;
+    }
+    button {
+      background: #174ea6;
+      color: white;
+      border: 0;
+      font-weight: bold;
+      cursor: pointer;
+    }
+    .note { color: #64748b; font-size: 13px; }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <h1>TEAM APP</h1>
+    <p style="text-align:center">Lead Management CRM</p>
+    <form id="leadForm">
+      <input id="name" placeholder="Customer Name" required>
+      <input id="phone" placeholder="Phone Number" type="tel" required>
+      <input id="location" placeholder="Customer Location" required>
+      <button type="submit">Save Lead</button>
+    </form>
+    <p id="message" class="note">
+      Demo screen only. Secure shared storage and login are not connected yet.
+    </p>
+  </div>
+  <script>
+    document.getElementById('leadForm').addEventListener('submit', function(e) {
+      e.preventDefault();
+      document.getElementById('message').textContent =
+        'Demo only: lead is not saved permanently yet.';
+    });
+  </script>
+</body>
+</html>
+
