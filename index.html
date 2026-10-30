@@ -158,10 +158,82 @@ async function loadLeads(){
 }
 
 async function downloadLeads(){
- if(currentRole!=="admin"){
-  alert("Admin only access");
-  return;
- }
+
+  el("downloadBtn").textContent = "Preparing download...";
+
+  let query = db.from("leads")
+    .select("*")
+    .order("created_at", {ascending:false});
+
+  if(currentRole !== "admin"){
+    query = query.eq("created_by", currentUser.id);
+  }
+
+  const {data,error} = await query;
+
+  if(error){
+    alert("Download failed: " + error.message);
+    el("downloadBtn").textContent =
+      currentRole === "admin"
+      ? "Download All Leads (CSV)"
+      : "Download My Leads (CSV)";
+    return;
+  }
+
+  if(!data || data.length === 0){
+    alert("No leads available to download.");
+    return;
+  }
+
+  const headers = [
+    "Customer Name",
+    "Phone",
+    "Location",
+    "Uploaded By",
+    "Status",
+    "Follow-up Date",
+    "Remarks"
+  ];
+
+  const rows = data.map(l => [
+    l.customer_name,
+    l.phone,
+    l.location,
+    l.uploaded_by_name,
+    l.status,
+    l.follow_up_date,
+    l.remarks
+  ]);
+
+  const csv = [headers,...rows]
+    .map(row => row.map(v =>
+      '"' + String(v ?? "").replace(/"/g,'""') + '"'
+    ).join(","))
+    .join("\r\n");
+
+  const blob = new Blob(["\uFEFF" + csv], {
+    type:"text/csv;charset=utf-8;"
+  });
+
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+
+  a.href = url;
+  a.download = currentRole === "admin"
+    ? "TEAM_APP_All_Leads.csv"
+    : "TEAM_APP_My_Leads.csv";
+
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+
+  el("downloadBtn").textContent =
+    currentRole === "admin"
+    ? "Download All Leads (CSV)"
+    : "Download My Leads (CSV)";
+}
 
  el("downloadBtn").textContent="Preparing download...";
 
