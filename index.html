@@ -43,8 +43,9 @@ button{background:#174ea6;color:white;border:0;font-weight:bold;cursor:pointer}
 <textarea id="remarks" placeholder="Remarks"></textarea>
 <button type="submit">Save Lead</button>
 </form>
+
 <h3>Leads</h3>
- <button id="downloadBtn" type="button" class="hidden">
+<button id="downloadBtn" type="button" class="hidden">
 Download All Leads (CSV)
 </button>
 <div id="leads">Loading leads...</div>
@@ -64,6 +65,7 @@ const el=id=>document.getElementById(id);
 
 el("loginBtn").addEventListener("click",signIn);
 el("logoutBtn").addEventListener("click",logout);
+el("downloadBtn").addEventListener("click",downloadLeads);
 
 async function signIn(){
  el("msg").textContent="Logging in...";
@@ -96,18 +98,29 @@ async function showApp(){
  }
 
  currentRole=roleData.role;
+
  el("login").classList.add("hidden");
  el("app").classList.remove("hidden");
+
+ if(currentRole==="admin"){
+  el("downloadBtn").classList.remove("hidden");
+ }else{
+  el("downloadBtn").classList.add("hidden");
+ }
+
  await loadLeads();
 }
 
+async function loadLeads(){
+ let query=db.from("leads")
+  .select("*")
+  .order("created_at",{ascending:false});
 
- if(currentRole === "admin"){
-  el("downloadBtn").classList.remove("hidden");
-}
- async function loadLeads(){
- const {data,error}=await db.from("leads")
-  .select("*").order("created_at",{ascending:false});
+ if(currentRole!=="admin"){
+  query=query.eq("created_by",currentUser.id);
+ }
+
+ const {data,error}=await query;
 
  if(error){
   el("leads").textContent="Could not load leads: "+error.message;
@@ -135,54 +148,60 @@ async function showApp(){
 }
 
 async function downloadLeads(){
-  if(currentRole !== "admin"){
-    alert("Admin only access");
-    return;
-  }
+ if(currentRole!=="admin"){
+  alert("Admin only access");
+  return;
+ }
 
-  const {data,error}=await db
-    .from("leads")
-    .select("*")
-    .order("created_at",{ascending:false});
+ el("downloadBtn").textContent="Preparing download...";
 
-  if(error){
-    alert("Download failed: "+error.message);
-    return;
-  }
+ const {data,error}=await db
+  .from("leads")
+  .select("*")
+  .order("created_at",{ascending:false});
 
-  const headers=[
-    "Customer Name","Phone","Location",
-    "Uploaded By","Status","Follow-up Date","Remarks"
-  ];
+ el("downloadBtn").textContent="Download All Leads (CSV)";
 
-  const rows=data.map(l=>[
-    l.customer_name,
-    l.phone,
-    l.location,
-    l.uploaded_by_name,
-    l.status,
-    l.follow_up_date,
-    l.remarks
-  ]);
+ if(error){
+  alert("Download failed: "+error.message);
+  return;
+ }
 
-  const csv=[headers,...rows]
-    .map(row=>row.map(v=>'"'+String(v??"").replace(/"/g,'""')+'"').join(","))
-    .join("\r\n");
+ const headers=[
+  "Customer Name","Phone","Location",
+  "Uploaded By","Status","Follow-up Date","Remarks"
+ ];
 
-  const blob=new Blob(["\uFEFF"+csv],{
-    type:"text/csv;charset=utf-8;"
-  });
+ const rows=(data||[]).map(l=>[
+  l.customer_name,
+  l.phone,
+  l.location,
+  l.uploaded_by_name,
+  l.status,
+  l.follow_up_date,
+  l.remarks
+ ]);
 
-  const url=URL.createObjectURL(blob);
-  const a=document.createElement("a");
-  a.href=url;
-  a.download="TEAM_APP_All_Leads.csv";
-  a.click();
-  URL.revokeObjectURL(url);
+ const csv=[headers,...rows]
+  .map(row=>row.map(v=>'"'+String(v??"").replace(/"/g,'""')+'"').join(","))
+  .join("\r\n");
+
+ const blob=new Blob(["\uFEFF"+csv],{
+  type:"text/csv;charset=utf-8;"
+ });
+
+ const url=URL.createObjectURL(blob);
+ const a=document.createElement("a");
+ a.href=url;
+ a.download="TEAM_APP_All_Leads.csv";
+ document.body.appendChild(a);
+ a.click();
+ a.remove();
+
+ setTimeout(()=>URL.revokeObjectURL(url),1000);
 }
 
-el("downloadBtn").addEventListener("click",downloadLeads);
- function escapeHtml(s){
+function escapeHtml(s){
  return String(s??"").replace(/[&<>"']/g,c=>({
   "&":"&amp;","<":"&lt;",">":"&gt;",
   '"':"&quot;","'":"&#39;"
@@ -191,6 +210,7 @@ el("downloadBtn").addEventListener("click",downloadLeads);
 
 el("leadForm").addEventListener("submit",async e=>{
  e.preventDefault();
+
  const {data,error:userError}=await db.auth.getUser();
 
  if(userError||!data.user){
