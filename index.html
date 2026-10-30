@@ -16,6 +16,8 @@ button{background:#174ea6;color:white;border:0;font-weight:bold;cursor:pointer}
 .hidden{display:none}
 .note{font-size:13px;color:#64748b}
 </style>
+ <link rel="manifest" href="./manifest.json">
+<meta name="theme-color" content="#174ea6">
 </head>
 <body>
 <header style="display:flex;justify-content:space-between;align-items:center;position:sticky;top:0;z-index:1000;">
@@ -256,6 +258,15 @@ db.auth.getSession().then(async({data,error})=>{
   await showApp();
  }
 });
+</script>
+ <script>
+if ("serviceWorker" in navigator) {
+  window.addEventListener("load", () => {
+    navigator.serviceWorker.register("./sw.js")
+      .then(() => console.log("TEAM APP Ready"))
+      .catch(error => console.log("Service Worker Error:", error));
+  });
+}
 </script>
 </body>
 </html>
