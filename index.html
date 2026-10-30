@@ -44,6 +44,9 @@ button{background:#174ea6;color:white;border:0;font-weight:bold;cursor:pointer}
 <button type="submit">Save Lead</button>
 </form>
 <h3>Leads</h3>
+ <button id="downloadBtn" type="button" class="hidden">
+Download All Leads (CSV)
+</button>
 <div id="leads">Loading leads...</div>
 <button id="logoutBtn" type="button">Logout</button>
 </section>
@@ -98,7 +101,11 @@ async function showApp(){
  await loadLeads();
 }
 
-async function loadLeads(){
+
+ if(currentRole === "admin"){
+  el("downloadBtn").classList.remove("hidden");
+}
+ async function loadLeads(){
  const {data,error}=await db.from("leads")
   .select("*").order("created_at",{ascending:false});
 
@@ -127,7 +134,55 @@ async function loadLeads(){
  `).join("");
 }
 
-function escapeHtml(s){
+async function downloadLeads(){
+  if(currentRole !== "admin"){
+    alert("Admin only access");
+    return;
+  }
+
+  const {data,error}=await db
+    .from("leads")
+    .select("*")
+    .order("created_at",{ascending:false});
+
+  if(error){
+    alert("Download failed: "+error.message);
+    return;
+  }
+
+  const headers=[
+    "Customer Name","Phone","Location",
+    "Uploaded By","Status","Follow-up Date","Remarks"
+  ];
+
+  const rows=data.map(l=>[
+    l.customer_name,
+    l.phone,
+    l.location,
+    l.uploaded_by_name,
+    l.status,
+    l.follow_up_date,
+    l.remarks
+  ]);
+
+  const csv=[headers,...rows]
+    .map(row=>row.map(v=>'"'+String(v??"").replace(/"/g,'""')+'"').join(","))
+    .join("\r\n");
+
+  const blob=new Blob(["\uFEFF"+csv],{
+    type:"text/csv;charset=utf-8;"
+  });
+
+  const url=URL.createObjectURL(blob);
+  const a=document.createElement("a");
+  a.href=url;
+  a.download="TEAM_APP_All_Leads.csv";
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
+el("downloadBtn").addEventListener("click",downloadLeads);
+ function escapeHtml(s){
  return String(s??"").replace(/[&<>"']/g,c=>({
   "&":"&amp;","<":"&lt;",">":"&gt;",
   '"':"&quot;","'":"&#39;"
