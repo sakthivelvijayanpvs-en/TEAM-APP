@@ -111,12 +111,13 @@ async function showApp(){
  el("login").classList.add("hidden");
  el("app").classList.remove("hidden");
 
- if(currentRole==="admin"){
-  el("downloadBtn").classList.remove("hidden");
- }else{
-  el("downloadBtn").classList.add("hidden");
- }
+el("downloadBtn").classList.remove("hidden");
 
+el("downloadBtn").textContent =
+ currentRole==="admin"
+ ? "Download All Leads (CSV)"
+ : "Download My Leads (CSV)";
+ 
  await loadLeads();
 }
 
