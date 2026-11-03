@@ -1,3 +1,4 @@
+
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -15,7 +16,7 @@ button{background:#174ea6;color:white;border:0;font-weight:bold;cursor:pointer}
 .hidden{display:none}
 .note{font-size:13px;color:#64748b}
 </style>
- <link rel="manifest" href="./manifest.json">
+<link rel="manifest" href="./manifest.json">
 <meta name="theme-color" content="#174ea6">
 </head>
 <body>
@@ -33,9 +34,7 @@ button{background:#174ea6;color:white;border:0;font-weight:bold;cursor:pointer}
 <input id="password" type="password" placeholder="Password">
 <button id="loginBtn" type="button">Login</button>
 <button id="forgotPasswordBtn" type="button" style="background:#64748b;">Forgot Password?</button>
-<button id="signupBtn" type="button">
-Create New Account
-</button>
+<button id="signupBtn" type="button">Create New Account</button>
 <p id="msg" class="note">Please login with your authorized account.</p>
 </section>
 
@@ -64,9 +63,7 @@ Create New Account
 </form>
 
 <h3>Leads</h3>
-<button id="downloadBtn" type="button" class="hidden">
-Download All Leads (CSV)
-</button>
+<button id="downloadBtn" type="button" class="hidden">Download All Leads (CSV)</button>
 <div id="leads">Loading leads...</div>
 <button id="logoutBtn" type="button">Logout</button>
 </section>
@@ -80,7 +77,7 @@ const db=window.supabase.createClient(SUPABASE_URL,SUPABASE_KEY);
 let currentUser=null;
 let currentRole="member";
 let recoveryMode =
-  new URLSearchParams(window.location.hash.substring(1)).get("type") === "recovery";
+new URLSearchParams(window.location.hash.substring(1)).get("type")==="recovery";
 
 const el=id=>document.getElementById(id);
 
@@ -166,50 +163,42 @@ db.auth.onAuthStateChange((event,session)=>{
  }
 });
 
-// If the reset link has just opened this page, show the password form.
 if(recoveryMode){
  showRecoveryScreen(null);
 }
 
 async function signUp(){
+ const email=el("email").value.trim();
+ const password=el("password").value;
 
-  const email = el("email").value.trim();
-  const password = el("password").value;
+ if(!email||!password){
+  el("msg").textContent="Enter Gmail and Password.";
+  return;
+ }
+ if(password.length<6){
+  el("msg").textContent="Password must be at least 6 characters.";
+  return;
+ }
 
-  if(!email || !password){
-    el("msg").textContent = "Enter Gmail and Password.";
-    return;
-  }
+ el("msg").textContent="Creating account...";
 
-  if(password.length < 6){
-    el("msg").textContent = "Password must be at least 6 characters.";
-    return;
-  }
+ const {data,error}=await db.auth.signUp({
+  email:email,
+  password:password,
+  options:{data:{display_name:email.split("@")[0]}}
+ });
 
-  el("msg").textContent = "Creating account...";
+ if(error){
+  el("msg").textContent="Signup failed: "+error.message;
+  return;
+ }
 
-  const {data,error} = await db.auth.signUp({
-    email: email,
-    password: password,
-    options: {
-      data: {
-        display_name: email.split("@")[0]
-      }
-    }
-  });
-
-  if(error){
-    el("msg").textContent = "Signup failed: " + error.message;
-    return;
-  }
-
-  if(data.session){
-    currentUser = data.user;
-    await showApp();
-  }else{
-    el("msg").textContent =
-      "Account created! Please verify your email, then login.";
-  }
+ if(data.session){
+  currentUser=data.user;
+  await showApp();
+ }else{
+  el("msg").textContent="Account created! Verify your email, then contact Admin to assign Member role.";
+ }
 }
 
 async function showApp(){
@@ -223,6 +212,7 @@ async function showApp(){
   el("msg").textContent="Role lookup failed: "+roleError.message;
   return;
  }
+
  if(!roleData){
   el("msg").textContent="Account role not assigned. Contact Admin.";
   return;
@@ -234,12 +224,13 @@ async function showApp(){
  el("resetPassword").classList.add("hidden");
  el("app").classList.remove("hidden");
 
-el("downloadBtn").classList.remove("hidden");
-
-el("downloadBtn").textContent =
- currentRole==="admin"
- ? "Download All Leads (CSV)"
- : "Download My Leads (CSV)";
+ // ADMIN ONLY DOWNLOAD BUTTON
+ if(currentRole==="admin"){
+  el("downloadBtn").classList.remove("hidden");
+  el("downloadBtn").textContent="Download All Leads (CSV)";
+ }else{
+  el("downloadBtn").classList.add("hidden");
+ }
 
  await loadLeads();
 }
@@ -282,82 +273,63 @@ async function loadLeads(){
 
 async function downloadLeads(){
 
-  el("downloadBtn").textContent = "Preparing download...";
+ // Only Admin can download
+ if(currentRole!=="admin"){
+  el("downloadBtn").classList.add("hidden");
+  alert("Access denied. Only Admin can download leads.");
+  return;
+ }
 
-  let query = db.from("leads")
-    .select("*")
-    .order("created_at", {ascending:false});
+ el("downloadBtn").textContent="Preparing download...";
 
-  if(currentRole !== "admin"){
-    query = query.eq("created_by", currentUser.id);
-  }
+ const {data,error}=await db.from("leads")
+  .select("*")
+  .order("created_at",{ascending:false});
 
-  const {data,error} = await query;
+ if(error){
+  alert("Download failed: "+error.message);
+  el("downloadBtn").textContent="Download All Leads (CSV)";
+  return;
+ }
 
-  if(error){
-    alert("Download failed: " + error.message);
-    el("downloadBtn").textContent =
-      currentRole === "admin"
-      ? "Download All Leads (CSV)"
-      : "Download My Leads (CSV)";
-    return;
-  }
+ if(!data||data.length===0){
+  alert("No leads available to download.");
+  el("downloadBtn").textContent="Download All Leads (CSV)";
+  return;
+ }
 
-  if(!data || data.length === 0){
-    alert("No leads available to download.");
-    return;
-  }
+ const headers=[
+  "Customer Name","Phone","Location",
+  "Uploaded By","Status","Follow-up Date","Remarks"
+ ];
 
-  const headers = [
-    "Customer Name",
-    "Phone",
-    "Location",
-    "Uploaded By",
-    "Status",
-    "Follow-up Date",
-    "Remarks"
-  ];
+ const rows=data.map(l=>[
+  l.customer_name,l.phone,l.location,
+  l.uploaded_by_name,l.status,
+  l.follow_up_date,l.remarks
+ ]);
 
-  const rows = data.map(l => [
-    l.customer_name,
-    l.phone,
-    l.location,
-    l.uploaded_by_name,
-    l.status,
-    l.follow_up_date,
-    l.remarks
-  ]);
+ const csv=[headers,...rows]
+  .map(row=>row.map(v=>
+   '"'+String(v??"").replace(/"/g,'""')+'"'
+  ).join(","))
+  .join("\r\n");
 
-  const csv = [headers,...rows]
-    .map(row => row.map(v =>
-      '"' + String(v ?? "").replace(/"/g,'""') + '"'
-    ).join(","))
-    .join("\r\n");
+ const blob=new Blob(["\uFEFF"+csv],{
+  type:"text/csv;charset=utf-8;"
+ });
 
-  const blob = new Blob(["\uFEFF" + csv], {
-    type:"text/csv;charset=utf-8;"
-  });
+ const url=URL.createObjectURL(blob);
+ const a=document.createElement("a");
+ a.href=url;
+ a.download="TEAM_APP_All_Leads.csv";
+ document.body.appendChild(a);
+ a.click();
+ a.remove();
+ setTimeout(()=>URL.revokeObjectURL(url),1000);
 
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement("a");
-
-  a.href = url;
-  a.download = currentRole === "admin"
-    ? "TEAM_APP_All_Leads.csv"
-    : "TEAM_APP_My_Leads.csv";
-
-  document.body.appendChild(a);
-  a.click();
-  a.remove();
-
-  setTimeout(() => URL.revokeObjectURL(url), 1000);
-
-  el("downloadBtn").textContent =
-    currentRole === "admin"
-    ? "Download All Leads (CSV)"
-    : "Download My Leads (CSV)";
+ el("downloadBtn").textContent="Download All Leads (CSV)";
 }
-
 
 function escapeHtml(s){
  return String(s??"").replace(/[&<>"']/g,c=>({
@@ -408,13 +380,14 @@ db.auth.getSession().then(async({data,error})=>{
  }
 });
 </script>
- <script>
-if ("serviceWorker" in navigator) {
-  window.addEventListener("load", () => {
-    navigator.serviceWorker.register("./sw.js")
-      .then(() => console.log("TEAM APP Ready"))
-      .catch(error => console.log("Service Worker Error:", error));
-  });
+
+<script>
+if("serviceWorker" in navigator){
+ window.addEventListener("load",()=>{
+  navigator.serviceWorker.register("./sw.js")
+   .then(()=>console.log("TEAM APP Ready"))
+   .catch(error=>console.log("Service Worker Error:",error));
+ });
 }
 </script>
 </body>
