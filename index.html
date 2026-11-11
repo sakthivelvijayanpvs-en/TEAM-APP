@@ -13,6 +13,7 @@ main{max-width:700px;margin:20px auto;padding:15px}
 .card{background:white;padding:20px;border-radius:14px;margin-bottom:16px}
 input,button,select,textarea{width:100%;padding:12px;margin:7px 0;box-sizing:border-box;border:1px solid #ccd5e1;border-radius:8px}
 button{background:#174ea6;color:white;border:0;font-weight:bold;cursor:pointer}
+button:disabled{opacity:.6;cursor:not-allowed}
 .hidden{display:none}
 .note{font-size:13px;color:#64748b}
 </style>
@@ -50,11 +51,16 @@ button{background:#174ea6;color:white;border:0;font-weight:bold;cursor:pointer}
 </section>
 
 <section class="card hidden" id="app">
+
 <h3>Add New Lead</h3>
 
 <form id="leadForm">
 <input id="name" placeholder="Customer name" required>
-<input id="phone" placeholder="Phone number" required>
+<input id="phone" type="tel" placeholder="Phone number" required>
+
+<div id="duplicateNotice" class="note"></div>
+<div id="duplicateRecord"></div>
+
 <input id="location" placeholder="Location">
 <input id="follow" type="date">
 
@@ -68,19 +74,38 @@ button{background:#174ea6;color:white;border:0;font-weight:bold;cursor:pointer}
 </select>
 
 <textarea id="remarks" placeholder="Remarks"></textarea>
+
 <button type="submit">Save Lead</button>
 </form>
 
 <h3>Leads</h3>
 
-<input id="leadSearch" type="tel" inputmode="numeric" placeholder="Search previous leads by mobile number">
-<p class="note">Search by entering all or part of the mobile number.</p>
+<!-- ADMIN SEARCH -->
+<input
+ id="adminSearch"
+ class="hidden"
+ type="tel"
+ inputmode="numeric"
+ placeholder="Admin: Search all leads by mobile number"
+>
 
-<button id="downloadBtn" type="button" class="hidden">Download All Leads (CSV)</button>
+<!-- MEMBER SEARCH -->
+<input
+ id="memberSearch"
+ class="hidden"
+ type="tel"
+ inputmode="numeric"
+ placeholder="Member: Search your leads by mobile number"
+>
+
+<button id="downloadBtn" type="button" class="hidden">
+Download All Leads (CSV)
+</button>
 
 <div id="leads">Loading leads...</div>
 
 <button id="logoutBtn" type="button">Logout</button>
+
 </section>
 </main>
 
@@ -105,8 +130,13 @@ el("topLogoutBtn").addEventListener("click",logout);
 el("downloadBtn").addEventListener("click",downloadLeads);
 el("forgotPasswordBtn").addEventListener("click",sendPasswordReset);
 el("saveNewPasswordBtn").addEventListener("click",saveNewPassword);
-el("leadSearch").addEventListener("input",loadLeads);
+
+el("adminSearch").addEventListener("input",loadLeads);
+el("memberSearch").addEventListener("input",loadLeads);
+
 el("leads").addEventListener("click",handleLeadActions);
+el("phone").addEventListener("input",checkDuplicatePhone);
+el("duplicateRecord").addEventListener("click",handleDuplicateUpdate);
 
 async function signIn(){
  el("msg").textContent="Logging in...";
@@ -243,6 +273,7 @@ async function signUp(){
 }
 
 async function showApp(){
+
  const {data:roleData,error:roleError}=await db
   .from("team_roles")
   .select("role")
@@ -265,27 +296,211 @@ async function showApp(){
  el("resetPassword").classList.add("hidden");
  el("app").classList.remove("hidden");
 
- // ADMIN ONLY DOWNLOAD BUTTON
+ // SEPARATE SEARCH BAR FOR EACH ROLE
  if(currentRole==="admin"){
+
+  el("adminSearch").classList.remove("hidden");
+  el("memberSearch").classList.add("hidden");
+
   el("downloadBtn").classList.remove("hidden");
   el("downloadBtn").textContent="Download All Leads (CSV)";
+
  }else{
+
+  el("adminSearch").classList.add("hidden");
+  el("memberSearch").classList.remove("hidden");
+
   el("downloadBtn").classList.add("hidden");
  }
 
  await loadLeads();
 }
 
+// NORMALIZE MOBILE NUMBER
+function normalizePhone(value){
+ return String(value||"").replace(/\D/g,"");
+}
+
+// DUPLICATE CHECK VARIABLES
+let duplicateMatches=[];
+let duplicateCheckToken=0;
+
+// CHECK PREVIOUS LEADS WHEN PHONE IS TYPED
+async function checkDuplicatePhone(){
+
+ const token=++duplicateCheckToken;
+
+ const typed=normalizePhone(el("phone").value);
+
+ el("duplicateRecord").innerHTML="";
+ duplicateMatches=[];
+
+ if(typed.length<7){
+  el("duplicateNotice").textContent="";
+  return;
+ }
+
+ el("duplicateNotice").textContent="Checking previous leads...";
+
+ let query=db.from("leads")
+  .select("*")
+  .ilike("phone","%"+typed.slice(-7)+"%")
+  .order("created_at",{ascending:false})
+  .limit(50);
+
+ // ADMIN CHECKS ALL LEADS
+ // MEMBER CHECKS ONLY OWN LEADS
+ if(currentRole!=="admin" && currentUser){
+  query=query.eq("created_by",currentUser.id);
+ }
+
+ const {data,error}=await query;
+
+ if(token!==duplicateCheckToken)return;
+
+ if(error){
+  el("duplicateNotice").textContent=
+   "Could not check previous leads: "+error.message;
+  return;
+ }
+
+ duplicateMatches=(data||[]).filter(row=>
+  normalizePhone(row.phone)===typed
+ );
+
+ if(!duplicateMatches.length){
+  el("duplicateNotice").textContent=
+   "No matching previous lead found. You can add this lead.";
+  return;
+ }
+
+ el("duplicateNotice").textContent=
+  "Duplicate phone number found. Previous lead details are shown below. Update the existing record instead of adding it again.";
+
+ el("duplicateRecord").innerHTML=duplicateMatches.map(row=>`
+
+  <div class="card" data-duplicate-id="${escapeHtml(row.id)}">
+
+   <b>Previous lead found: ${escapeHtml(row.customer_name)}</b><br>
+
+   Phone: ${escapeHtml(row.phone)}<br>
+
+   Location: ${escapeHtml(row.location||"")}<br>
+
+   ${currentRole==="admin"
+    ? "Uploaded By: "+escapeHtml(row.uploaded_by_name||"Unknown")
+    : ""}
+
+   <label>Update Status</label>
+
+   <select data-dup-field="status">
+    ${["New","Follow-up","Interested","Approved","Disbursed","Rejected"].map(v=>`
+     <option value="${v}" ${row.status===v?"selected":""}>${v}</option>
+    `).join("")}
+   </select>
+
+   <label>Update Follow-up Date</label>
+
+   <input
+    type="date"
+    data-dup-field="follow_up_date"
+    value="${escapeHtml(row.follow_up_date||"")}"
+   >
+
+   <label>Update Remarks</label>
+
+   <textarea data-dup-field="remarks">${escapeHtml(row.remarks||"")}</textarea>
+
+   <button
+    type="button"
+    data-action="update-duplicate"
+    data-id="${escapeHtml(row.id)}"
+   >Update Existing Lead</button>
+
+   <p class="note" data-dup-message></p>
+
+  </div>
+
+ `).join("");
+}
+
+// UPDATE PREVIOUS DUPLICATE RECORD
+async function handleDuplicateUpdate(event){
+
+ const button=event.target.closest(
+  'button[data-action="update-duplicate"]'
+ );
+
+ if(!button)return;
+
+ const card=button.closest("[data-duplicate-id]");
+
+ if(!card)return;
+
+ const id=button.dataset.id;
+
+ const status=card.querySelector(
+  '[data-dup-field="status"]'
+ ).value;
+
+ const follow_up_date=card.querySelector(
+  '[data-dup-field="follow_up_date"]'
+ ).value||null;
+
+ const remarks=card.querySelector(
+  '[data-dup-field="remarks"]'
+ ).value.trim();
+
+ const message=card.querySelector('[data-dup-message]');
+
+ button.disabled=true;
+ button.textContent="Updating...";
+
+ let updateQuery=db.from("leads")
+  .update({status,follow_up_date,remarks})
+  .eq("id",id);
+
+ if(currentRole!=="admin"){
+  updateQuery=updateQuery.eq("created_by",currentUser.id);
+ }
+
+ const {data,error}=await updateQuery.select("id");
+
+ button.disabled=false;
+ button.textContent="Update Existing Lead";
+
+ if(error){
+  message.textContent="Update failed: "+error.message;
+  return;
+ }
+
+ if(!data||data.length===0){
+  message.textContent=
+   "No record updated. Check Supabase update permissions (RLS).";
+  return;
+ }
+
+ message.textContent=
+  "Previous lead updated successfully. Duplicate record was not added.";
+
+ await loadLeads();
+}
+
+// LOAD AND SEARCH LEADS
 async function loadLeads(){
 
- const search=el("leadSearch").value.trim();
+ const search=(
+  currentRole==="admin"
+   ?el("adminSearch").value
+   :el("memberSearch").value
+ ).trim();
 
  let query=db.from("leads")
   .select("*")
   .order("created_at",{ascending:false});
 
- // Members can only search their own leads.
- // Admin can search all leads.
+ // ADMIN: ALL LEADS
+ // MEMBER: OWN LEADS ONLY
  if(currentRole!=="admin"){
   query=query.eq("created_by",currentUser.id);
  }
@@ -302,13 +517,13 @@ async function loadLeads(){
  }
 
  if(!data||data.length===0){
-  el("leads").textContent=search
-   ?"No matching mobile number found."
-   :"No leads yet";
+  el("leads").textContent=
+   search?"No matching leads found":"No leads yet";
   return;
  }
 
  el("leads").innerHTML=data.map(l=>`
+
   <div class="card" data-lead-card="${escapeHtml(l.id)}">
 
    <b>${escapeHtml(l.customer_name)}</b><br>
@@ -323,67 +538,75 @@ async function loadLeads(){
 
    <label>Status</label>
 
-   <select data-field="status" data-id="${escapeHtml(l.id)}">
-    ${["New","Follow-up","Interested","Approved","Disbursed","Rejected"].map(v=>`<option value="${v}" ${l.status===v?"selected":""}>${v}</option>`).join("")}
+   <select data-field="status">
+    ${["New","Follow-up","Interested","Approved","Disbursed","Rejected"].map(v=>`
+     <option value="${v}" ${l.status===v?"selected":""}>${v}</option>
+    `).join("")}
    </select>
 
    <label>Follow-up Date</label>
 
-   <input type="date"
+   <input
+    type="date"
     data-field="follow_up_date"
-    data-id="${escapeHtml(l.id)}"
-    value="${escapeHtml(l.follow_up_date||"")}">
+    value="${escapeHtml(l.follow_up_date||"")}"
+   >
 
    <label>Remarks</label>
 
-   <textarea data-field="remarks"
-    data-id="${escapeHtml(l.id)}"
-    rows="2">${escapeHtml(l.remarks||"")}</textarea>
+   <textarea data-field="remarks">${escapeHtml(l.remarks||"")}</textarea>
 
-   <button type="button"
+   <button
+    type="button"
     data-action="save-edit"
-    data-id="${escapeHtml(l.id)}">Save Changes</button>
+    data-id="${escapeHtml(l.id)}"
+   >Save Changes</button>
 
-   <p class="note" data-edit-message="${escapeHtml(l.id)}"></p>
+   <p class="note" data-edit-message></p>
 
   </div>
+
  `).join("");
 }
 
+// SAVE EDITED LEAD
 async function handleLeadActions(event){
 
- const button=event.target.closest('button[data-action="save-edit"]');
+ const button=event.target.closest(
+  'button[data-action="save-edit"]'
+ );
 
  if(!button)return;
 
  const id=button.dataset.id;
 
- const card=el("leads").querySelector(
-  `[data-lead-card="${CSS.escape(id)}"]`
- );
+ const card=button.closest("[data-lead-card]");
 
  if(!card)return;
 
- const status=card.querySelector('[data-field="status"]').value;
+ const status=card.querySelector(
+  '[data-field="status"]'
+ ).value;
 
- const follow_up_date=
-  card.querySelector('[data-field="follow_up_date"]').value||null;
+ const follow_up_date=card.querySelector(
+  '[data-field="follow_up_date"]'
+ ).value||null;
 
- const remarks=
-  card.querySelector('[data-field="remarks"]').value.trim();
+ const remarks=card.querySelector(
+  '[data-field="remarks"]'
+ ).value.trim();
 
  const message=card.querySelector('[data-edit-message]');
 
  button.disabled=true;
  button.textContent="Saving...";
- message.textContent="";
 
- // Only the three requested fields are updated.
+ // ONLY THREE FIELDS ARE UPDATED
  let updateQuery=db.from("leads")
   .update({status,follow_up_date,remarks})
   .eq("id",id);
 
- // Members can update only their own records.
+ // MEMBER CAN UPDATE OWN RECORD ONLY
  if(currentRole!=="admin"){
   updateQuery=updateQuery.eq("created_by",currentUser.id);
  }
@@ -399,16 +622,17 @@ async function handleLeadActions(event){
  }
 
  if(!data||data.length===0){
-  message.textContent="No record updated. Check Supabase update permissions (RLS).";
+  message.textContent=
+   "No record updated. Check Supabase update permissions (RLS).";
   return;
  }
 
  message.textContent="Changes saved successfully.";
 }
 
+// ADMIN ONLY DOWNLOAD
 async function downloadLeads(){
 
- // Only Admin can download
  if(currentRole!=="admin"){
   el("downloadBtn").classList.add("hidden");
   alert("Access denied. Only Admin can download leads.");
@@ -439,9 +663,13 @@ async function downloadLeads(){
  ];
 
  const rows=data.map(l=>[
-  l.customer_name,l.phone,l.location,
-  l.uploaded_by_name,l.status,
-  l.follow_up_date,l.remarks
+  l.customer_name,
+  l.phone,
+  l.location,
+  l.uploaded_by_name,
+  l.status,
+  l.follow_up_date,
+  l.remarks
  ]);
 
  const csv=[headers,...rows]
@@ -469,6 +697,7 @@ async function downloadLeads(){
  el("downloadBtn").textContent="Download All Leads (CSV)";
 }
 
+// HTML ESCAPE
 function escapeHtml(s){
  return String(s??"").replace(/[&<>"']/g,c=>({
   "&":"&amp;",
@@ -479,7 +708,9 @@ function escapeHtml(s){
  }[c]));
 }
 
+// ADD NEW LEAD
 el("leadForm").addEventListener("submit",async e=>{
+
  e.preventDefault();
 
  const {data,error:userError}=await db.auth.getUser();
@@ -489,14 +720,38 @@ el("leadForm").addEventListener("submit",async e=>{
   return;
  }
 
+ const newPhone=normalizePhone(el("phone").value);
+
+ // CHECK DUPLICATE BEFORE INSERTING
+ if(newPhone.length>=7){
+
+  await checkDuplicatePhone();
+
+  if(duplicateMatches.length){
+
+   el("msg").textContent=
+    "This mobile number already exists. Update the previous lead shown above instead of adding a duplicate.";
+
+   return;
+  }
+ }
+
  const {error}=await db.from("leads").insert({
+
   customer_name:el("name").value.trim(),
+
   phone:el("phone").value.trim(),
+
   location:el("location").value.trim(),
+
   follow_up_date:el("follow").value||null,
+
   status:el("status").value,
+
   remarks:el("remarks").value.trim(),
+
   created_by:data.user.id
+
  });
 
  if(error){
@@ -508,20 +763,30 @@ el("leadForm").addEventListener("submit",async e=>{
 
  e.target.reset();
 
+ el("duplicateNotice").textContent="";
+ el("duplicateRecord").innerHTML="";
+ duplicateMatches=[];
+
  await loadLeads();
 });
 
+// LOGOUT
 async function logout(){
  await db.auth.signOut();
  location.reload();
 }
 
+// RESTORE EXISTING SESSION
 db.auth.getSession().then(async({data,error})=>{
+
  if(!error&&data.session&&!recoveryMode){
+
   currentUser=data.session.user;
+
   await showApp();
  }
 });
+
 </script>
 
 <script>
