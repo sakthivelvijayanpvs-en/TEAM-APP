@@ -1,0 +1,590 @@
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>TEAM APP CRM</title>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<style>
+body{font-family:Arial;background:#f1f5f9;margin:0;color:#172033}
+header{background:#174ea6;color:white;padding:18px}
+main{max-width:700px;margin:20px auto;padding:15px}
+.card{background:white;padding:20px;border-radius:14px;margin-bottom:16px}
+input,button,select,textarea{width:100%;padding:12px;margin:7px 0;box-sizing:border-box;border:1px solid #ccd5e1;border-radius:8px}
+button{background:#174ea6;color:white;border:0;font-weight:bold;cursor:pointer}
+.hidden{display:none}
+.note{font-size:13px;color:#64748b}
+.app-top-row{display:flex;justify-content:space-between;align-items:flex-start;gap:12px;margin-bottom:14px}
+.today-counter{background:#e8f1ff;border:1px solid #c8dcff;border-radius:12px;padding:10px 14px;min-width:112px;text-align:center;flex-shrink:0}
+.today-counter .count{font-size:26px;font-weight:700;color:#174ea6;line-height:1.2}
+.today-counter .label{font-size:11px;color:#475569;font-weight:700}
+.entry-date{background:#f8fafc;color:#475569}
+@media(max-width:420px){.app-top-row{align-items:center}.today-counter{min-width:96px;padding:8px}.today-counter .count{font-size:22px}}
+</style>
+<link rel="manifest" href="./manifest.json">
+<meta name="theme-color" content="#174ea6">
+</head>
+<body>
+<header style="display:flex;justify-content:space-between;align-items:center;position:sticky;top:0;z-index:1000;">
+<div>
+<h2>TEAM APP</h2>
+<div>Lead Management CRM</div>
+</div>
+<button id="topLogoutBtn" type="button" style="width:auto;background:white;color:#174ea6;padding:10px 16px;">Logout</button>
+</header>
+<main>
+<section class="card" id="login">
+<h3>Login</h3>
+<input id="email" type="email" placeholder="Email address">
+<input id="password" type="password" placeholder="Password">
+<button id="loginBtn" type="button">Login</button>
+<button id="forgotPasswordBtn" type="button" style="background:#64748b;">Forgot Password?</button>
+<button id="signupBtn" type="button">Create New Account</button>
+<p id="msg" class="note">Please login with your authorized account.</p>
+</section>
+
+<section class="card hidden" id="resetPassword">
+<h3>Set New Password</h3>
+<input id="newPassword" type="password" placeholder="New password (minimum 6 characters)">
+<input id="confirmNewPassword" type="password" placeholder="Confirm new password">
+<button id="saveNewPasswordBtn" type="button">Update Password</button>
+<p id="resetMsg" class="note">Enter your new password.</p>
+</section>
+
+<section class="card hidden" id="app">
+<div class="app-top-row">
+ <h3 style="margin:8px 0;">Add New Lead</h3>
+ <div class="today-counter" aria-live="polite">
+  <div class="label">TODAY'S LEADS</div>
+  <div class="count" id="todayLeadCount">0</div>
+  <div class="note" id="todayLeadScope">Your entries</div>
+ </div>
+</div>
+<form id="leadForm">
+<label for="name">Customer Name *</label>
+<input id="name" placeholder="Customer name" autocomplete="off" required>
+<label for="phone">Phone Number *</label>
+<input id="phone" type="tel" placeholder="Phone number" inputmode="numeric" autocomplete="off" required>
+<label for="entryDate">Entry Date (automatic)</label>
+<input id="entryDate" class="entry-date" type="date" readonly required>
+<div id="duplicateNotice" class="note"></div>
+<div id="duplicateRecord"></div>
+<input id="location" placeholder="Location">
+<input id="follow" type="date">
+<select id="status">
+<option>New</option><option>Follow-up</option>
+<option>Interested</option><option>Approved</option>
+<option>Disbursed</option><option>Rejected</option>
+</select>
+<textarea id="remarks" placeholder="Remarks"></textarea>
+<button type="submit">Save Lead</button>
+</form>
+
+<h3>Leads</h3>
+<input id="adminSearch" class="hidden" type="tel" inputmode="numeric" placeholder="Admin: Search all leads by mobile number">
+<input id="memberSearch" class="hidden" type="tel" inputmode="numeric" placeholder="Member: Search your leads by mobile number">
+<button id="downloadBtn" type="button" class="hidden">Download All Leads (CSV)</button>
+<div id="leads">Loading leads...</div>
+<button id="logoutBtn" type="button">Logout</button>
+</section>
+</main>
+
+<script>
+const SUPABASE_URL="https://jaccqwfvtfpwuirarntt.supabase.co";
+const SUPABASE_KEY="sb_publishable_ffTmApZkygA81Erw0RuNXA_4HBqgYQ2";
+const db=window.supabase.createClient(SUPABASE_URL,SUPABASE_KEY);
+
+let currentUser=null;
+let currentRole="member";
+let recoveryMode =
+new URLSearchParams(window.location.hash.substring(1)).get("type")==="recovery";
+
+const el=id=>document.getElementById(id);
+
+el("loginBtn").addEventListener("click",signIn);
+el("signupBtn").addEventListener("click",signUp);
+el("logoutBtn").addEventListener("click",logout);
+el("topLogoutBtn").addEventListener("click",logout);
+el("downloadBtn").addEventListener("click",downloadLeads);
+el("forgotPasswordBtn").addEventListener("click",sendPasswordReset);
+el("saveNewPasswordBtn").addEventListener("click",saveNewPassword);
+el("adminSearch").addEventListener("input",loadLeads);
+el("memberSearch").addEventListener("input",loadLeads);
+el("leads").addEventListener("click",handleLeadActions);
+el("phone").addEventListener("input",checkDuplicatePhone);
+el("duplicateRecord").addEventListener("click",handleDuplicateUpdate);
+
+async function signIn(){
+ el("msg").textContent="Logging in...";
+ const {data,error}=await db.auth.signInWithPassword({
+  email:el("email").value.trim(),
+  password:el("password").value
+ });
+ if(error){
+  el("msg").textContent="Login failed: "+error.message;
+  return;
+ }
+ currentUser=data.user;
+ await showApp();
+}
+
+async function sendPasswordReset(){
+ const email=el("email").value.trim();
+ if(!email){
+  el("msg").textContent="Enter your registered email address first.";
+  el("email").focus();
+  return;
+ }
+ el("msg").textContent="Sending password reset email...";
+ const redirectTo=window.location.origin+window.location.pathname;
+ const {error}=await db.auth.resetPasswordForEmail(email,{redirectTo});
+ if(error){
+  el("msg").textContent="Could not send reset email: "+error.message;
+  return;
+ }
+ el("msg").textContent="If this email is registered, a password reset link has been sent. Check your inbox and spam folder.";
+}
+
+async function saveNewPassword(){
+ const password=el("newPassword").value;
+ const confirmPassword=el("confirmNewPassword").value;
+ if(password.length<6){
+  el("resetMsg").textContent="Password must be at least 6 characters.";
+  return;
+ }
+ if(password!==confirmPassword){
+  el("resetMsg").textContent="Passwords do not match.";
+  return;
+ }
+ el("resetMsg").textContent="Updating password...";
+ const {error}=await db.auth.updateUser({password});
+ if(error){
+  el("resetMsg").textContent="Password update failed: "+error.message;
+  return;
+ }
+ await db.auth.signOut();
+ recoveryMode=false;
+ el("resetPassword").classList.add("hidden");
+ el("login").classList.remove("hidden");
+ el("app").classList.add("hidden");
+ el("password").value="";
+ el("newPassword").value="";
+ el("confirmNewPassword").value="";
+ el("msg").textContent="Password updated successfully. Please login with your new password.";
+}
+
+function showRecoveryScreen(session){
+ recoveryMode=true;
+ currentUser=session?.user||currentUser;
+ el("login").classList.add("hidden");
+ el("app").classList.add("hidden");
+ el("resetPassword").classList.remove("hidden");
+ el("resetMsg").textContent="Enter your new password.";
+}
+
+db.auth.onAuthStateChange((event,session)=>{
+ if(event==="PASSWORD_RECOVERY"){
+  showRecoveryScreen(session);
+ }
+});
+
+if(recoveryMode){
+ showRecoveryScreen(null);
+}
+
+async function signUp(){
+ const email=el("email").value.trim();
+ const password=el("password").value;
+
+ if(!email||!password){
+  el("msg").textContent="Enter Gmail and Password.";
+  return;
+ }
+ if(password.length<6){
+  el("msg").textContent="Password must be at least 6 characters.";
+  return;
+ }
+
+ el("msg").textContent="Creating account...";
+
+ const {data,error}=await db.auth.signUp({
+  email:email,
+  password:password,
+  options:{data:{display_name:email.split("@")[0]}}
+ });
+
+ if(error){
+  el("msg").textContent="Signup failed: "+error.message;
+  return;
+ }
+
+ if(data.session){
+  currentUser=data.user;
+  await showApp();
+ }else{
+  el("msg").textContent="Account created! Verify your email, then contact Admin to assign Member role.";
+ }
+}
+
+async function showApp(){
+ const {data:roleData,error:roleError}=await db
+  .from("team_roles")
+  .select("role")
+  .eq("user_id",currentUser.id)
+  .maybeSingle();
+
+ if(roleError){
+  el("msg").textContent="Role lookup failed: "+roleError.message;
+  return;
+ }
+
+ if(!roleData){
+  el("msg").textContent="Account role not assigned. Contact Admin.";
+  return;
+ }
+
+ currentRole=roleData.role;
+
+ el("login").classList.add("hidden");
+ el("resetPassword").classList.add("hidden");
+ el("app").classList.remove("hidden");
+
+ // Separate search bar for each role
+ if(currentRole==="admin"){
+  el("adminSearch").classList.remove("hidden");
+  el("memberSearch").classList.add("hidden");
+  el("downloadBtn").classList.remove("hidden");
+  el("downloadBtn").textContent="Download All Leads (CSV)";
+ }else{
+  el("adminSearch").classList.add("hidden");
+  el("memberSearch").classList.remove("hidden");
+  el("downloadBtn").classList.add("hidden");
+ }
+
+ el("todayLeadScope").textContent=currentRole==="admin"?"All members":"Your entries";
+ setEntryDate();
+ await Promise.all([loadLeads(),loadTodayLeadCount()]);
+}
+
+function setEntryDate(){
+ const now=new Date();
+ const localDate=new Date(now.getTime()-now.getTimezoneOffset()*60000).toISOString().slice(0,10);
+ el("entryDate").value=localDate;
+}
+
+async function loadTodayLeadCount(){
+ if(!currentUser)return;
+ const now=new Date();
+ const start=new Date(now.getFullYear(),now.getMonth(),now.getDate());
+ const end=new Date(now.getFullYear(),now.getMonth(),now.getDate()+1);
+ let query=db.from("leads")
+  .select("id",{count:"exact",head:true})
+  .gte("created_at",start.toISOString())
+  .lt("created_at",end.toISOString());
+ if(currentRole!=="admin"){
+  query=query.eq("created_by",currentUser.id);
+ }
+ const {count,error}=await query;
+ if(error){
+  el("todayLeadCount").textContent="—";
+  el("todayLeadScope").textContent="Count unavailable";
+  console.error("Today's lead count failed:",error.message);
+  return;
+ }
+ el("todayLeadCount").textContent=String(count??0);
+ el("todayLeadScope").textContent=currentRole==="admin"?"All members":"Your entries";
+}
+
+function normalizePhone(value){
+ return String(value||"").replace(/\D/g,"");
+}
+
+let duplicateMatches=[];
+let duplicateCheckToken=0;
+
+async function checkDuplicatePhone(){
+ const token=++duplicateCheckToken;
+ const typed=normalizePhone(el("phone").value);
+ el("duplicateRecord").innerHTML="";
+ duplicateMatches=[];
+ if(typed.length<7){
+  el("duplicateNotice").textContent="";
+  return;
+ }
+ el("duplicateNotice").textContent="Checking previous leads...";
+ let query=db.from("leads").select("*").ilike("phone","%"+typed.slice(-7)+"%").order("created_at",{ascending:false}).limit(50);
+ if(currentRole!=="admin" && currentUser){
+  query=query.eq("created_by",currentUser.id);
+ }
+ const {data,error}=await query;
+ if(token!==duplicateCheckToken)return;
+ if(error){
+  el("duplicateNotice").textContent="Could not check previous leads: "+error.message;
+  return;
+ }
+ duplicateMatches=(data||[]).filter(row=>normalizePhone(row.phone)===typed);
+ if(!duplicateMatches.length){
+  el("duplicateNotice").textContent="No matching previous lead found. You can add this lead.";
+  return;
+ }
+ el("duplicateNotice").textContent="Duplicate phone number found. Previous lead details are shown below. Update the existing record instead of adding it again.";
+ el("duplicateRecord").innerHTML=duplicateMatches.map(row=>`
+  <div class="card" data-duplicate-id="${escapeHtml(row.id)}">
+   <b>Previous lead found: ${escapeHtml(row.customer_name)}</b><br>
+   Phone: ${escapeHtml(row.phone)}<br>
+   Location: ${escapeHtml(row.location||"")}<br>
+   ${currentRole==="admin"?"Uploaded By: "+escapeHtml(row.uploaded_by_name||"Unknown"):""}
+   <label>Update Status</label>
+   <select data-dup-field="status">
+    ${["New","Follow-up","Interested","Approved","Disbursed","Rejected"].map(v=>`<option value="${v}" ${row.status===v?"selected":""}>${v}</option>`).join("")}
+   </select>
+   <label>Update Follow-up Date</label>
+   <input type="date" data-dup-field="follow_up_date" value="${escapeHtml(row.follow_up_date||"")}">
+   <label>Update Remarks</label>
+   <textarea data-dup-field="remarks">${escapeHtml(row.remarks||"")}</textarea>
+   <button type="button" data-action="update-duplicate" data-id="${escapeHtml(row.id)}">Update Existing Lead</button>
+   <p class="note" data-dup-message></p>
+  </div>
+ `).join("");
+}
+
+async function handleDuplicateUpdate(event){
+ const button=event.target.closest('button[data-action="update-duplicate"]');
+ if(!button)return;
+ const card=button.closest("[data-duplicate-id]");
+ if(!card)return;
+ const id=button.dataset.id;
+ const status=card.querySelector('[data-dup-field="status"]').value;
+ const follow_up_date=card.querySelector('[data-dup-field="follow_up_date"]').value||null;
+ const remarks=card.querySelector('[data-dup-field="remarks"]').value.trim();
+ const message=card.querySelector('[data-dup-message]');
+ button.disabled=true;
+ button.textContent="Updating...";
+ let updateQuery=db.from("leads").update({status,follow_up_date,remarks}).eq("id",id);
+ if(currentRole!=="admin")updateQuery=updateQuery.eq("created_by",currentUser.id);
+ const {data,error}=await updateQuery.select("id");
+ button.disabled=false;
+ button.textContent="Update Existing Lead";
+ if(error){message.textContent="Update failed: "+error.message;return;}
+ if(!data||data.length===0){message.textContent="No record updated. Check Supabase update permissions (RLS).";return;}
+ message.textContent="Previous lead updated successfully. Duplicate record was not added.";
+ await loadLeads();
+}
+
+async function loadLeads(){
+ const search=(currentRole==="admin"?el("adminSearch").value:el("memberSearch").value).trim();
+ let query=db.from("leads")
+  .select("*")
+  .order("created_at",{ascending:false});
+
+ // Admin can search all leads; Member can search only their own leads.
+ if(currentRole!=="admin"){
+  query=query.eq("created_by",currentUser.id);
+ }
+ if(search){
+  query=query.ilike("phone","%"+search+"%");
+ }
+
+ const {data,error}=await query;
+ if(error){
+  el("leads").textContent="Could not load leads: "+error.message;
+  return;
+ }
+ if(!data||data.length===0){
+  el("leads").textContent=search?"No matching leads found":"No leads yet";
+  return;
+ }
+
+ el("leads").innerHTML=data.map(l=>`
+  <div class="card" data-lead-card="${escapeHtml(l.id)}">
+   <b>${escapeHtml(l.customer_name)}</b><br>
+   Phone: ${escapeHtml(l.phone)}<br>
+   Location: ${escapeHtml(l.location||"")}<br>
+   ${currentRole==="admin" ? "Uploaded By: <b>"+escapeHtml(l.uploaded_by_name||"Unknown")+"</b><br>" : ""}
+   <label>Status</label>
+   <select data-field="status">
+    ${["New","Follow-up","Interested","Approved","Disbursed","Rejected"].map(v=>`<option value="${v}" ${l.status===v?"selected":""}>${v}</option>`).join("")}
+   </select>
+   <label>Follow-up Date</label>
+   <input type="date" data-field="follow_up_date" value="${escapeHtml(l.follow_up_date||"")}">
+   <label>Remarks</label>
+   <textarea data-field="remarks">${escapeHtml(l.remarks||"")}</textarea>
+   <button type="button" data-action="save-edit" data-id="${escapeHtml(l.id)}">Save Changes</button>
+   <p class="note" data-edit-message></p>
+  </div>
+ `).join("");
+}
+
+async function handleLeadActions(event){
+ const button=event.target.closest('button[data-action="save-edit"]');
+ if(!button)return;
+ const id=button.dataset.id;
+ const card=button.closest("[data-lead-card]");
+ if(!card)return;
+ const status=card.querySelector('[data-field="status"]').value;
+ const follow_up_date=card.querySelector('[data-field="follow_up_date"]').value||null;
+ const remarks=card.querySelector('[data-field="remarks"]').value.trim();
+ const message=card.querySelector('[data-edit-message]');
+ button.disabled=true;
+ button.textContent="Saving...";
+ let updateQuery=db.from("leads").update({status,follow_up_date,remarks}).eq("id",id);
+ if(currentRole!=="admin"){
+  updateQuery=updateQuery.eq("created_by",currentUser.id);
+ }
+ const {data,error}=await updateQuery.select("id");
+ button.disabled=false;
+ button.textContent="Save Changes";
+ if(error){
+  message.textContent="Update failed: "+error.message;
+  return;
+ }
+ if(!data||data.length===0){
+  message.textContent="No record updated. Check Supabase update permissions (RLS).";
+  return;
+ }
+ message.textContent="Changes saved successfully.";
+}
+
+async function downloadLeads(){
+
+ // Only Admin can download
+ if(currentRole!=="admin"){
+  el("downloadBtn").classList.add("hidden");
+  alert("Access denied. Only Admin can download leads.");
+  return;
+ }
+
+ el("downloadBtn").textContent="Preparing download...";
+
+ const {data,error}=await db.from("leads")
+  .select("*")
+  .order("created_at",{ascending:false});
+
+ if(error){
+  alert("Download failed: "+error.message);
+  el("downloadBtn").textContent="Download All Leads (CSV)";
+  return;
+ }
+
+ if(!data||data.length===0){
+  alert("No leads available to download.");
+  el("downloadBtn").textContent="Download All Leads (CSV)";
+  return;
+ }
+
+ const headers=[
+  "Customer Name","Phone","Location",
+  "Uploaded By","Status","Follow-up Date","Remarks"
+ ];
+
+ const rows=data.map(l=>[
+  l.customer_name,l.phone,l.location,
+  l.uploaded_by_name,l.status,
+  l.follow_up_date,l.remarks
+ ]);
+
+ const csv=[headers,...rows]
+  .map(row=>row.map(v=>
+   '"'+String(v??"").replace(/"/g,'""')+'"'
+  ).join(","))
+  .join("\r\n");
+
+ const blob=new Blob(["\uFEFF"+csv],{
+  type:"text/csv;charset=utf-8;"
+ });
+
+ const url=URL.createObjectURL(blob);
+ const a=document.createElement("a");
+ a.href=url;
+ a.download="TEAM_APP_All_Leads.csv";
+ document.body.appendChild(a);
+ a.click();
+ a.remove();
+ setTimeout(()=>URL.revokeObjectURL(url),1000);
+
+ el("downloadBtn").textContent="Download All Leads (CSV)";
+}
+
+function escapeHtml(s){
+ return String(s??"").replace(/[&<>"']/g,c=>({
+  "&":"&amp;","<":"&lt;",">":"&gt;",
+  '"':"&quot;","'":"&#39;"
+ }[c]));
+}
+
+el("leadForm").addEventListener("submit",async e=>{
+ e.preventDefault();
+
+ const customerName=el("name").value.trim();
+ const phoneValue=el("phone").value.trim();
+ if(!customerName||!phoneValue){
+  el("msg").textContent="Please enter both Customer Name and Phone Number before saving.";
+  if(!customerName)el("name").focus();else el("phone").focus();
+  return;
+ }
+ setEntryDate();
+ const {data,error:userError}=await db.auth.getUser();
+
+ if(userError||!data.user){
+  el("msg").textContent="Please login again.";
+  return;
+ }
+
+ const newPhone=normalizePhone(el("phone").value);
+ if(newPhone.length>=7){
+  await checkDuplicatePhone();
+  if(duplicateMatches.length){
+   el("msg").textContent="This mobile number already exists. Update the previous lead shown above instead of adding a duplicate.";
+   return;
+  }
+ }
+
+ const {error}=await db.from("leads").insert({
+  customer_name:el("name").value.trim(),
+  phone:el("phone").value.trim(),
+  location:el("location").value.trim(),
+  follow_up_date:el("follow").value||null,
+  status:el("status").value,
+  remarks:el("remarks").value.trim(),
+  created_by:data.user.id
+ });
+
+ if(error){
+  el("msg").textContent="Save failed: "+error.message;
+  return;
+ }
+
+ el("msg").textContent="Lead saved successfully!";
+ e.target.reset();
+ el("duplicateNotice").textContent="";
+ el("duplicateRecord").innerHTML="";
+ duplicateMatches=[];
+ setEntryDate();
+ await Promise.all([loadLeads(),loadTodayLeadCount()]);
+});
+
+async function logout(){
+ await db.auth.signOut();
+ location.reload();
+}
+
+db.auth.getSession().then(async({data,error})=>{
+ if(!error&&data.session&&!recoveryMode){
+  currentUser=data.session.user;
+  await showApp();
+ }
+});
+</script>
+
+<script>
+if("serviceWorker" in navigator){
+ window.addEventListener("load",()=>{
+  navigator.serviceWorker.register("./sw.js")
+   .then(()=>console.log("TEAM APP Ready"))
+   .catch(error=>console.log("Service Worker Error:",error));
+ });
+}
+</script>
+</body>
+</html>
